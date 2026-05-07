@@ -1,0 +1,234 @@
+{
+  "name": "ETL_Audit_Pipeline_Orchestration",
+  "properties": {
+    "description": "Main orchestration pipeline for ETL audit process with CHG table handling",
+    "activities": [
+      {
+        "name": "Notebook1_Lookup_Validation",
+        "type": "DatabricksNotebook",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "userProperties": [],
+        "typeProperties": {
+          "notebookPath": "/Workspace/Notebooks/Notebook1_Lookup_Validation",
+          "baseParameters": {
+            "job_name": {
+              "value": "@pipeline().parameters.job_name",
+              "type": "Expression"
+            },
+            "src_table1": {
+              "value": "@pipeline().parameters.src_table1",
+              "type": "Expression"
+            },
+            "database_name": {
+              "value": "@pipeline().parameters.database_name",
+              "type": "Expression"
+            }
+          }
+        },
+        "linkedServiceName": {
+          "referenceName": "AzureDatabricks_LinkedService",
+          "type": "LinkedServiceReference"
+        }
+      },
+      {
+        "name": "Check_CHG_Table_Type",
+        "type": "IfCondition",
+        "dependsOn": [
+          {
+            "activity": "Notebook1_Lookup_Validation",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "userProperties": [],
+        "typeProperties": {
+          "expression": {
+            "value": "@equals(pipeline().parameters.chg_final, 'CHG')",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "CHG_Write_Mode_Overwrite",
+              "type": "DatabricksNotebook",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 1,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "userProperties": [],
+              "typeProperties": {
+                "notebookPath": "/Workspace/Notebooks/Notebook2_Processing_Loop",
+                "baseParameters": {
+                  "database_name": {
+                    "value": "@pipeline().parameters.database_name",
+                    "type": "Expression"
+                  },
+                  "write_mode": "overwrite",
+                  "table_type": "CHG"
+                }
+              },
+              "linkedServiceName": {
+                "referenceName": "AzureDatabricks_LinkedService",
+                "type": "LinkedServiceReference"
+              }
+            }
+          ],
+          "ifFalseActivities": [
+            {
+              "name": "FINAL_Write_Mode_Append",
+              "type": "DatabricksNotebook",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 1,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "userProperties": [],
+              "typeProperties": {
+                "notebookPath": "/Workspace/Notebooks/Notebook2_Processing_Loop",
+                "baseParameters": {
+                  "database_name": {
+                    "value": "@pipeline().parameters.database_name",
+                    "type": "Expression"
+                  },
+                  "write_mode": "append",
+                  "table_type": "FINAL"
+                }
+              },
+              "linkedServiceName": {
+                "referenceName": "AzureDatabricks_LinkedService",
+                "type": "LinkedServiceReference"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "Final_Notebook_Cleanup",
+        "type": "DatabricksNotebook",
+        "dependsOn": [
+          {
+            "activity": "Check_CHG_Table_Type",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "userProperties": [],
+        "typeProperties": {
+          "notebookPath": "/Workspace/Notebooks/Final_Notebook_Cleanup",
+          "baseParameters": {
+            "database_name": {
+              "value": "@pipeline().parameters.database_name",
+              "type": "Expression"
+            },
+            "target_table": {
+              "value": "@pipeline().parameters.target_table",
+              "type": "Expression"
+            }
+          }
+        },
+        "linkedServiceName": {
+          "referenceName": "AzureDatabricks_LinkedService",
+          "type": "LinkedServiceReference"
+        }
+      },
+      {
+        "name": "CHG_Table_Cleanup",
+        "type": "IfCondition",
+        "dependsOn": [
+          {
+            "activity": "Final_Notebook_Cleanup",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "userProperties": [],
+        "typeProperties": {
+          "expression": {
+            "value": "@equals(pipeline().parameters.chg_final, 'CHG')",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "Clean_Delete_CHG_Table",
+              "type": "DatabricksNotebook",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "userProperties": [],
+              "typeProperties": {
+                "notebookPath": "/Workspace/Notebooks/CHG_Table_Cleanup",
+                "baseParameters": {
+                  "database_name": {
+                    "value": "@pipeline().parameters.database_name",
+                    "type": "Expression"
+                  },
+                  "chg_table": {
+                    "value": "@pipeline().parameters.target_table",
+                    "type": "Expression"
+                  }
+                }
+              },
+              "linkedServiceName": {
+                "referenceName": "AzureDatabricks_LinkedService",
+                "type": "LinkedServiceReference"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "parameters": {
+      "job_name": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "src_table1": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "database_name": {
+        "type": "string",
+        "defaultValue": "default"
+      },
+      "target_table": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "chg_final": {
+        "type": "string",
+        "defaultValue": "FINAL"
+      }
+    },
+    "annotations": [],
+    "lastPublishTime": "2026-05-07T10:00:00Z"
+  },
+  "type": "Microsoft.DataFactory/factories/pipelines"
+}
